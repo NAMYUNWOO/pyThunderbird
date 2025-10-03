@@ -27,6 +27,78 @@ Installation
 pip install pyThunderbird
 ```
 
+## IMAP Support Enhancement
+
+This fork adds IMAP mail folder support to pyThunderbird. The original library only supported `Mail/Local Folders`, but this version can now index and search emails from both Local Folders and IMAP accounts.
+
+### Key Features Added
+- ✅ Auto-detection of IMAP accounts in `ImapMail/` directory
+- ✅ Scanning and indexing IMAP mailbox files (e.g., `INBOX`, `Sent`)
+- ✅ Hybrid approach: supports both Local Folders and IMAP folders
+- ✅ CLI options to control IMAP inclusion (`--show-imap`, `--no-imap`)
+
+### Changes to Thunderbird Class
+
+```python
+# New attributes
+self.imap_root = f"{self.profile}/ImapMail"
+self.imap_accounts = self._detect_imap_accounts()
+
+# Updated method signature
+def get_mailboxes(self, include_imap=True, restore_toc=False, progress_bar=None):
+    """
+    Get mailboxes from Local Folders and optionally IMAP folders.
+
+    Args:
+        include_imap (bool): If True, also scan IMAP folders
+        restore_toc (bool): If True, restore table of contents
+        progress_bar: Optional progress bar for tracking
+
+    Returns:
+        Dict[str, ThunderbirdMailbox]: Dictionary of mailboxes
+    """
+```
+
+### Usage Example
+
+```python
+from thunderbird.mail import Thunderbird
+
+# Initialize with IMAP support
+tb = Thunderbird.get("username")
+
+# Show detected IMAP accounts
+print(f"IMAP accounts: {tb.imap_accounts}")
+
+# Get mailboxes (includes IMAP by default)
+mailboxes = tb.get_mailboxes(include_imap=True)
+
+# Get only Local Folders (exclude IMAP)
+local_only = tb.get_mailboxes(include_imap=False)
+```
+
+### IMAP Folder Structure
+
+```
+~/Library/Thunderbird/Profiles/[profile]/
+├── Mail/Local Folders/        # Original support
+│   ├── Inbox
+│   ├── Sent
+│   └── ...
+└── ImapMail/                   # NEW: IMAP support
+    ├── outlook.office365.com/  # Auto-detected
+    │   ├── INBOX              # Indexed
+    │   ├── Sent               # Indexed
+    │   └── ...
+    └── gmail.com/              # Auto-detected
+        ├── INBOX
+        └── ...
+```
+
+### Backward Compatibility
+
+All changes are backward compatible. If you don't want IMAP support, simply pass `include_imap=False` to `get_mailboxes()` or use the `--no-imap` CLI flag.
+
 Get Sources
 ===========
 ```bash

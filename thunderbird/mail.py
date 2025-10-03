@@ -257,23 +257,105 @@ class Thunderbird(MailArchive):
         pass
         self.index_db = SQLDB(self.index_db_path, check_same_thread=False)
         self.local_folders = f"{self.profile}/Mail/Local Folders"
+
+        # IMAP support: Add ImapMail folder path
+        self.imap_root = f"{self.profile}/ImapMail"
+        self.imap_accounts = self._detect_imap_accounts()
+
         self.errors=[]
 
-    def get_mailboxes(self, progress_bar=None, restore_toc: bool = False):
+    def _detect_imap_accounts(self) -> list:
+        """
+        Detect IMAP accounts in ImapMail folder
+
+        Returns:
+            list: List of IMAP account directory names
+        """
+        import os
+        imap_accounts = []
+
+        if os.path.exists(self.imap_root):
+            try:
+                for item in os.listdir(self.imap_root):
+                    item_path = os.path.join(self.imap_root, item)
+                    if os.path.isdir(item_path):
+                        imap_accounts.append(item)
+            except Exception as e:
+                # Silently ignore errors during IMAP account detection
+                pass
+
+        return imap_accounts
+
+    def get_mailboxes(self, progress_bar=None, restore_toc: bool = False, include_imap: bool = True):
         """
         Create a dict of Thunderbird mailboxes.
 
+        Args:
+            progress_bar: Progress bar instance
+            restore_toc: Whether to restore table of contents
+            include_imap: Whether to include IMAP folders (default: True)
         """
+        import os
         extensions = {"Folder": ".sbd", "Mailbox": ""}
+        mailboxes = {}  # Dictionary to store ThunderbirdMailbox instances
+        self.errors=[]
+
+        # Scan Local Folders
         file_selector = FileSelector(
             path=self.local_folders, extensions=extensions, create_ui=False
         )
+
+        total_files = file_selector.file_count
+
+        # Add IMAP mailboxes to total count
+        if include_imap:
+            for account in self.imap_accounts:
+                account_path = os.path.join(self.imap_root, account)
+                if os.path.exists(account_path):
+                    # Count mbox files in IMAP folder (files without .msf extension)
+                    for item in os.listdir(account_path):
+                        item_path = os.path.join(account_path, item)
+                        if os.path.isfile(item_path) and not item.endswith('.msf') and not item.endswith('.dat'):
+                            total_files += 1
+
         if progress_bar is not None:
-            progress_bar.total = file_selector.file_count
-        mailboxes = {}  # Dictionary to store ThunderbirdMailbox instances
-        self.errors=[]
+            progress_bar.total = total_files
+
+        # Traverse Local Folders
         self._traverse_tree(file_selector.tree_structure, mailboxes, progress_bar, restore_toc)
+
+        # Scan IMAP folders
+        if include_imap:
+            self._scan_imap_folders(mailboxes, progress_bar, restore_toc)
+
         return mailboxes
+
+    def _scan_imap_folders(self, mailboxes: dict, progress_bar=None, restore_toc: bool = False):
+        """
+        Scan IMAP folders and add mailboxes
+
+        Args:
+            mailboxes: Dictionary to store mailbox instances
+            progress_bar: Progress bar instance
+            restore_toc: Whether to restore table of contents
+        """
+        import os
+        for account in self.imap_accounts:
+            account_path = os.path.join(self.imap_root, account)
+            if os.path.exists(account_path):
+                try:
+                    for item in os.listdir(account_path):
+                        item_path = os.path.join(account_path, item)
+                        # Only process mbox files (not .msf or .dat files)
+                        if os.path.isfile(item_path) and not item.endswith('.msf') and not item.endswith('.dat'):
+                            try:
+                                self.add_mailbox(item_path, mailboxes, progress_bar, restore_toc)
+                            except Exception as e:
+                                error_msg = f"{item_path}: {str(e)}"
+                                self.errors.append(error_msg)
+                except Exception as e:
+                    error_msg = f"Error scanning IMAP account {account}: {str(e)}"
+                    self.errors.append(error_msg)
 
     def add_mailbox(self,mailbox_path,mailboxes, progress_bar, restore_toc:bool=False):
         """
